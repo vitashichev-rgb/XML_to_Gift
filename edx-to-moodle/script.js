@@ -148,3 +148,37 @@ if(typeof document!=='undefined'){
  $('textInput').addEventListener('input',()=>{clozeFiles=[];render();});
 }
 if(typeof module!=='undefined')module.exports={convertTextToGift,parseOne,splitQuestions,validateCloze,validateGift};
+splitQuestions = function splitQuestionsWithNumberedMatching(text) {
+  const chunks = [];
+  let current = [];
+  let answered = false;
+  let innerNumber = 0;
+  let matchingMode = false;
+
+  function flush() {
+    if (current.some(line => line.trim())) chunks.push(current.join("\n").trim());
+    current = [];
+    answered = false;
+    innerNumber = 0;
+    matchingMode = false;
+  }
+
+  for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
+    const m = line.match(/^\s*(\d+)[.)]\s*(\S.*)?$/);
+    if (m && current.length) {
+      const n = Number(m[1]);
+      const isInnerNumber = matchingMode && n === innerNumber + 1;
+      if (answered && !isInnerNumber) flush();
+      // Внутри «соотнесите» метки 1., 2., 3., ... относятся к парам.
+      // Первую метку 1. запоминаем ещё до первого [[...]].
+      if (isInnerNumber || (!answered && n === 1 && /соотнесите/i.test(current.join(" ")))) {
+        innerNumber = n;
+      }
+    }
+    if (line.trim() || current.length) current.push(line);
+    if (/\[\[[^\]\n]+\]\]/.test(line)) matchingMode = true;
+    if (isAnswerLine(line)) answered = true;
+  }
+  flush();
+  return chunks;
+};
