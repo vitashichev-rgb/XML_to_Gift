@@ -103,16 +103,105 @@ function convertTextToGift(text) {
   const result=blocks.map((block,i)=>parseOne(block,i));
   return {gift:result.map(v=>v.gift).join("").trim(), counts:result.reduce((acc,v)=>(acc[v.type]=(acc[v.type]||0)+1,acc),{})};
 }
+
+// Static pre-download validator. Does not replace Moodle's import validation.
+function validateGift(gift, sourceText = "") {
+  const errors = [], warnings = [];
+  if (!gift.trim()) return {errors:["Результат GIFT пуст."], warnings, count:0};
+  // Re-parse source so accidental omissions, invalid source syntax, and altered output are noticed.
+  let expected;
+  if (sourceText.trim()) {
+    try { expected = convertTextToGift(sourceText); }
+    catch (e) { errors.push("Исходные вопросы: " + e.message); }
+  }
+  if (expected && gift.trim() !== expected.gift.trim()) {
+    warnings.push("Результат отличается от автоматически сформированного GIFT. Проверьте ручные правки.");
+  }
+  const headings = [...gift.matchAll(/^::([^\n]+?)::/gm)];
+  if (!headings.length) errors.push("Не найдены заголовки вопросов формата ::Название::. Возможно, GIFT повреждён.");
+  const unique = new Set();
+  for (const h of headings) {
+    if (unique.has(h[1])) warnings.push(`Повторяется название вопроса «${h[1]}».`);
+    unique.add(h[1]);
+  }
+  let braces = 0, escaped = false;
+  for (const ch of gift) {
+    if (escaped) { escaped = false; continue; }
+    if (ch === "\\") { escaped = true; continue; }
+    if (ch === "{") braces++;
+    if (ch === "}") { braces--; if (braces < 0) {errors.push("Лишняя закрывающая фигурная скобка."); break;} }
+  }
+  if (braces !== 0) errors.push("Несбалансированные фигурные скобки в GIFT.");
+  // This format is emitted by this converter: header, question, {answer lines}.
+  const blocks = gift.trim().split(/\n\s*\n(?=::)/);
+  for (const [i, block] of blocks.entries()) {
+    const num = i+1;
+    if (!/^::[^\n]+::/.test(block)) { errors.push(`Блок ${num}: отсутствует название вопроса.`); continue; }
+    const open = block.indexOf("{");
+    const close = block.lastIndexOf("}");
+    if (open < 0 || close <= open) { errors.push(`Вопрос ${num}: отсутствует блок ответов {…}.`); continue; }
+    const content = block.slice(open+1,close).trim();
+    const choices = content.split("\n").map(x=>x.trim()).filter(Boolean);
+    if (!choices.length) {errors.push(`Вопрос ${num}: нет ответов.`);continue;}
+    const isMatching = choices.every(x=>/^=.+\s->\s.+$/.test(x));
+    if (isMatching) {
+      if (choices.length < 2) errors.push(`Вопрос ${num}: для соответствия нужны минимум две пары.`);
+      const left = choices.map(x=>x.slice(1).split(/\s->\s/)[0]);
+      if (new Set(left).size !== left.length) warnings.push(`Вопрос ${num}: повторяются формулировки в задании на соответствие.`);
+      continue;
+    }
+    if (choices.some(x=>/->/.test(x)) && !isMatching) errors.push(`Вопрос ${num}: некорректная пара соответствия.`);
+    const percent = choices.map(x=>x.match(/^~%([+-]?\d+(?:\.\d+)?)%/)).filter(Boolean);
+    if (percent.length) {
+      if (percent.length!==choices.length) errors.push(`Вопрос ${num}: смешаны процентные и обычные варианты.`);
+      const good = percent.map(m=>Number(m[1])).filter(v=>v>0);
+      const sum = good.reduce((a,b)=>a+b,0);
+      if (!good.length || Math.abs(sum-100)>0.000011) errors.push(`Вопрос ${num}: сумма положительных весов ${sum.toFixed(5)}%, требуется 100%.`);
+      if (percent.some(m=>Number(m[1])>100 || Number(m[1])< -100)) errors.push(`Вопрос ${num}: вес вне диапазона −100…100%.`);
+      if (percent.some(m=>Number(m[1])<0)) warnings.push(`Вопрос ${num}: у неправильных ответов отрицательные веса; проверьте штрафы в Moodle.`);
+    } else if (/^#/.test(content)) {
+      if (!/^#[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?::(?:\d+(?:\.\d*)?|\.\d+))?$/.test(content)) errors.push(`Вопрос ${num}: неправильный формат числового ответа.`);
+    } else if (!choices.every(x=>/^[=~]/.test(x))) {
+      errors.push(`Вопрос ${num}: неизвестный формат ответа.`);
+    } else if (!choices.some(x=>x.startsWith("="))) {
+      errors.push(`Вопрос ${num}: не найден правильный ответ.`);
+    }
+    if (choices.some(x=>/^[=~]\s*$/.test(x))) errors.push(`Вопрос ${num}: пустой вариант ответа.`);
+  }
+  if (/\{\d+:(?:MC|MULTICHOICE|MULTICHOICE_S):/i.test(gift)) warnings.push("Обнаружен Cloze: импортируйте такие вопросы отдельно в формате Moodle Cloze.");
+  return {errors:[...new Set(errors)], warnings:[...new Set(warnings)], count:headings.length};
+}
 if (typeof document!=="undefined") {
   const $=id=>document.getElementById(id);
+  const bar=document.querySelector(".buttons");
+  const checkBtn=document.createElement("button");
+  checkBtn.id="validateBtn"; checkBtn.type="button"; checkBtn.textContent="Проверить GIFT";
+  bar.insertBefore(checkBtn,$("copyBtn"));
+  const status=document.createElement("section");
+  status.id="validationReport";status.setAttribute("role","status");status.setAttribute("aria-live","polite");
+  status.style.cssText="margin:0 20px 20px;padding:16px;background:#fff;border:1px solid #dce2ea;border-radius:14px;display:none;white-space:pre-wrap;line-height:1.5";
+  bar.insertAdjacentElement("afterend",status);
+  function check(show=true) {
+    const report=validateGift($("giftOutput").value,$("textInput").value);
+    if (show) {
+      status.style.display="block";
+      status.textContent=`Проверено вопросов: ${report.count}\n` +
+        (report.errors.length ? "❌ Ошибки:\n"+report.errors.map(x=>"• "+x).join("\n") : "✅ Критических ошибок не найдено.") +
+        (report.warnings.length ? "\n⚠️ Предупреждения:\n"+report.warnings.map(x=>"• "+x).join("\n") : "") +
+        "\nПроверка не гарантирует успешный импорт: протестируйте файл в Moodle.";
+    }
+    return report;
+  }
   $("convertBtn").addEventListener("click",()=>{
-    try {$("giftOutput").value=convertTextToGift($("textInput").value).gift;$("customAlertOverlay").style.display="none";}
-    catch(e){$("giftOutput").value="";alert("Ошибка конвертации: "+e.message);}
+    try {$("giftOutput").value=convertTextToGift($("textInput").value).gift;$("customAlertOverlay").style.display="none";check(true);}
+    catch(e){$("giftOutput").value="";status.style.display="none";alert("Ошибка конвертации: "+e.message);}
   });
+  checkBtn.addEventListener("click",()=>check(true));
   $("closeAlertBtn").addEventListener("click",()=>$("customAlertOverlay").style.display="none");
   $("copyBtn").addEventListener("click",()=>{
     const content=$("giftOutput").value;
-    if(!content.trim())return alert("Нет данных для скачивания!");
+    const report=check(true);
+    if(report.errors.length) {alert("Скачивание остановлено: исправьте ошибки в GIFT (отчёт показан под кнопками).");return;}
     let name=prompt("Имя файла (без расширения):","questions");
     if(name===null)return;
     name=name.replace(/[\\/:*?"<>|\x00-\x1f]/g,"").trim()||"questions";
@@ -120,6 +209,6 @@ if (typeof document!=="undefined") {
     const a=document.createElement("a");a.href=url;a.download=name+".gift";document.body.appendChild(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
-  $("clearAll").addEventListener("click",()=>{$("textInput").value="";$("giftOutput").value="";$("customAlertOverlay").style.display="none";window.scrollTo(0,0);});
+  $("clearAll").addEventListener("click",()=>{$("textInput").value="";$("giftOutput").value="";status.style.display="none";$("customAlertOverlay").style.display="none";window.scrollTo(0,0);});
 }
-if (typeof module!=="undefined")module.exports={convertTextToGift,splitQuestions,parseOne};
+if (typeof module!=="undefined")module.exports={convertTextToGift,splitQuestions,parseOne,validateGift};
