@@ -177,7 +177,7 @@ splitQuestions = function splitQuestionsWithNumberedMatching(text) {
     }
     if (line.trim() || current.length) current.push(line);
     if (/\[\[[^\]\n]+\]\]/.test(line)) matchingMode = true;
-    if (isAnswerLine(line)) answered = true;
+    if (isAnswer(line)) answered = true;
   }
   flush();
   return chunks;
