@@ -60,36 +60,46 @@ function labelKey(value) {
 }
 // Each labelled answer is a distinct blank, not an alternative answer.
 function parseMultiBlank(lines, title) {
-  const tail = [];
+  // Read labelled answer groups backwards; "or=" belongs to the preceding label.
+  const groups = [];
   let pos = lines.length;
-  while (pos >= 2) {
-    const answer = lines[pos - 1].match(/^=\s*(.+)$/);
-    const marker = lines[pos - 2].match(/^([a-zа-я])\)\s*$/i);
-    if (!answer || !marker) break;
-    tail.unshift({ label: labelKey(marker[1]), answer: answer[1].trim() });
-    pos -= 2;
+  while (pos > 0) {
+    let cursor = pos;
+    const values = [];
+    while (cursor > 0 && /^(?:=|or=)/i.test(lines[cursor - 1])) {
+      const m = lines[cursor - 1].match(/^(or=|=)\s*(.*)$/i);
+      if (!m || !m[2].trim()) throw new Error(`${title}: пустой ответ в поле.`);
+      values.unshift({alternative: m[1].toLowerCase() === "or=", value:m[2].trim()});
+      cursor--;
+    }
+    if (!values.length) break;
+    const label = cursor > 0 ? lines[cursor - 1].match(/^([a-zа-я])[.)]\s*$/i) : null;
+    if (!label) break;
+    if (values[0].alternative) throw new Error(`${title}: после метки ${label[1]} первым должен идти ответ с «=».`);
+    groups.unshift({key:labelKey(label[1]), values});
+    pos = cursor - 1;
   }
-  if (tail.length < 2) return null;
-  if (new Set(tail.map(x => x.label)).size !== tail.length) throw new Error(`${title}: повторяются метки пропусков.`);
-  const stem = lines.slice(0, pos).join("\n");
-  if (!stem.trim()) throw new Error(`${title}: отсутствует текст вопроса с пропусками.`);
+  if (groups.length < 2) return null;
+  if (new Set(groups.map(g=>g.key)).size !== groups.length) throw new Error(`${title}: повторяются буквенные метки пропусков.`);
+  const stem = lines.slice(0,pos).join("\n");
+  if (!stem.trim()) throw new Error(`${title}: отсутствует текст вопроса.`);
   let updated = stem;
-  for (const item of tail) {
-    if (!item.answer) throw new Error(`${title}: пустой ответ к пункту ${item.label}.`);
-    // Only replace labels followed by an underline blank, not arbitrary mentions of letters.
-    const marker = item.label === "a" ? "[aа]" : item.label === "b" ? "[bв]" : item.label === "c" ? "[cс]" : item.label;
-    const re = new RegExp(`(${marker}\\)\\s*)(_{2,})`, "i");
-    if (!re.test(updated)) throw new Error(`${title}: не найден пропуск «${item.label}) ____» в тексте.`);
-    const placeholder = `CLOZEFIELD${item.label.toUpperCase()}TOKEN`;
-    updated = updated.replace(re, (_, prefix) => prefix + placeholder);
+  const replacements = [];
+  for (const g of groups) {
+    const aliases = g.key === "a" ? "[aа]" : g.key === "b" ? "[bв]" : g.key === "c" ? "[cс]" : g.key;
+    // Dot or closing bracket; support a._____ and a) _____, including Cyrillic lookalikes.
+    const re = new RegExp(`(^|[^\\p{L}\\p{N}])(${aliases}[.)]\\s*)_{2,}`, "iu");
+    const matches = [...updated.matchAll(new RegExp(re.source,"giu"))];
+    if (matches.length !== 1) throw new Error(`${title}: для поля ${g.key} найдено ${matches.length} пропусков; требуется ровно один.`);
+    const token=`__GIFT_CLOZE_FIELD_${g.key.toUpperCase()}__`;
+    updated=updated.replace(re, (_whole, prefix, marker)=>prefix+marker+token);
+    const valid = [...new Set(g.values.map(v=>v.value))];
+    replacements.push({token,cloze:`{1:SHORTANSWER:${valid.map(v=>"="+giftEscape(v)).join("~")}}`});
   }
-  if (/(?:^|\n)\s*[a-zа-я]\)\s*$/im.test(updated)) throw new Error(`${title}: осталась метка ответа без значения.`);
-  if (/_{2,}/.test(updated)) throw new Error(`${title}: найдены пропуски без ответов.`);
-  let safeText = giftEscape(updated);
-  for (const item of tail) {
-    safeText = safeText.replace(`CLOZEFIELD${item.label.toUpperCase()}TOKEN`, `{1:SHORTANSWER:=${giftEscape(item.answer)}}`);
-  }
-  return { type: "cloze", title, gift: `::${title}::${safeText}\n`, fields: tail.length };
+  if (/_{3,}/.test(updated)) throw new Error(`${title}: обнаружены пропуски без ответов.`);
+  let result=giftEscape(updated);
+  for (const r of replacements) result=result.replace(r.token,r.cloze);
+  return {type:"cloze", title, gift:`::${title}::${result}\n`, fields:groups.length};
 }
 function parseOne(block, idx) {
   const raw = block.split("\n").map(s=>s.trim()).filter(Boolean);
@@ -209,6 +219,17 @@ function validateGift(gift, sourceText = "") {
   if (/\{\d+:(?:MC|MULTICHOICE|MULTICHOICE_S):/i.test(gift)) warnings.push("Обнаружен Cloze: импортируйте такие вопросы отдельно в формате Moodle Cloze.");
   return {errors:[...new Set(errors)], warnings:[...new Set(warnings)], count:headings.length};
 }
+function validateCloze(text, expectedFields) {
+  const errors=[];
+  const fields=[...text.matchAll(/\{1:SHORTANSWER:([^{}]+)\}/g)];
+  if(fields.length!==expectedFields) errors.push(`Ожидалось полей ${expectedFields}, найдено ${fields.length}.`);
+  for(const [i,field] of fields.entries()) {
+    if(!/^=(?:\\.|[^~=])+/.test(field[1])) errors.push(`Поле ${i+1}: нет правильного ответа.`);
+    if(field[1].split(/(?<!\\)~(?==)/).some(v=>!v.replace(/^=/, "").trim())) errors.push(`Поле ${i+1}: обнаружен пустой ответ.`);
+  }
+  if(/_{3,}/.test(text)) errors.push("Остались незаполненные пропуски.");
+  return errors;
+}
 if (typeof document!=="undefined") {
   const $=id=>document.getElementById(id);
   let clozeFiles = [];
@@ -231,7 +252,11 @@ if (typeof document!=="undefined") {
       const btn=document.createElement("button");btn.type="button";
       btn.style.cssText="width:auto;display:inline-block;margin:8px 8px 0 0;padding:12px";
       btn.textContent=`Скачать Cloze — ${file.name} (${file.fields} поля)`;
-      btn.addEventListener("click",()=>saveGift(file.gift,`cloze_question_${i+1}`));
+      btn.addEventListener("click",()=>{
+        const issues=validateCloze(file.gift,file.fields);
+        if(issues.length) return alert("Cloze не прошёл проверку:\n"+issues.join("\n"));
+        saveGift(file.gift,`cloze_question_${i+1}`);
+      });
       clozeSection.appendChild(btn);
     });
   }
@@ -283,4 +308,4 @@ if (typeof document!=="undefined") {
   $("textInput").addEventListener("input",()=>{clozeFiles=[];renderClozeDownloads();});
   $("clearAll").addEventListener("click",()=>{clozeFiles=[];renderClozeDownloads();$("textInput").value="";$("giftOutput").value="";status.style.display="none";$("customAlertOverlay").style.display="none";window.scrollTo(0,0);});
 }
-if (typeof module!=="undefined")module.exports={convertTextToGift,splitQuestions,parseOne,validateGift};
+if (typeof module!=="undefined")module.exports={convertTextToGift,splitQuestions,parseOne,validateGift,validateCloze};
