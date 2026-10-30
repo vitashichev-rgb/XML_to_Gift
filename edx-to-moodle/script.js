@@ -79,7 +79,11 @@ function parseMultiBlank(lines, title) {
     groups.unshift({key:labelKey(label[1]), values});
     pos = cursor - 1;
   }
-  if (groups.length < 2) return null;
+  if (groups.length < 2) {
+    const answerLabels = lines.filter((line, i) => /^[a-zа-я][.)]\s*$/i.test(line) && /^(?:=|or=)/i.test(lines[i+1] || ""));
+    if (answerLabels.length >= 2) throw new Error(`${title}: не удалось разобрать метки ответов. Проверьте структуру a. / =ответ.`);
+    return null;
+  }
   if (new Set(groups.map(g=>g.key)).size !== groups.length) throw new Error(`${title}: повторяются буквенные метки пропусков.`);
   const stem = lines.slice(0,pos).join("\n");
   if (!stem.trim()) throw new Error(`${title}: отсутствует текст вопроса.`);
@@ -96,7 +100,9 @@ function parseMultiBlank(lines, title) {
     const valid = [...new Set(g.values.map(v=>v.value))];
     replacements.push({token,cloze:`{1:SHORTANSWER:${valid.map(v=>"="+giftEscape(v)).join("~")}}`});
   }
-  if (/_{3,}/.test(updated)) throw new Error(`${title}: обнаружены пропуски без ответов.`);
+  if (replacements.some(r => !updated.includes(r.token))) throw new Error(`${title}: не удалось связать ответы с пропусками.`);
+  const stripped = replacements.reduce((text, r) => text.replace(r.token, ""), updated);
+  if (/_{3,}/.test(stripped)) throw new Error(`${title}: обнаружены пропуски без ответов.`);
   let result=giftEscape(updated);
   for (const r of replacements) result=result.replace(r.token,r.cloze);
   return {type:"cloze", title, gift:`::${title}::${result}\n`, fields:groups.length};
@@ -232,6 +238,10 @@ function validateCloze(text, expectedFields) {
 }
 if (typeof document!=="undefined") {
   const $=id=>document.getElementById(id);
+  const version = document.createElement("span");
+  version.textContent="Версия 5.1 · многополевые Cloze";
+  version.style.cssText="display:block;margin:0 20px 8px;font-size:13px;color:#44627f";
+  document.querySelector("h1")?.insertAdjacentElement("afterend",version);
   let clozeFiles = [];
   const clozeSection = document.createElement("section");
   clozeSection.id="clozeDownloads";
