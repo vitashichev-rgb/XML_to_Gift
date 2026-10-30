@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XML → GIFT — вопросы в одно полотно</title>
+<link rel="stylesheet" href="style.css"><script defer src="script.js"></script>
+</head>
+<body>
+<h1>Конвертер для проверочных и контрольных работ, свёрстанных в одно «полотно» (XML → GIFT)</h1>
+<div class="description"><p class="intro red">Внимание: поддерживаются одиночный и множественный выбор, короткий и числовой ответ. Cloze (выпадающий список) нужно сохранять отдельно — по одному вопросу в каждом файле — и импортировать в Moodle в формате Cloze. Каждый Cloze-вопрос оберните в <span class="copy-problem" data-code="&lt;problem&gt;&#10;&lt;/problem&gt;" title="Нажмите, чтобы скопировать">&lt;problem&gt;...&lt;/problem&gt;</span>. Внимательно проверяйте результат.</p>
+<details><summary>Пример Cloze-вопроса</summary><pre><span class="highlight-tag">&lt;problem&gt;</span>
+  &lt;p&gt;Текст вопроса&lt;/p&gt;
+  &lt;optionresponse&gt;
+    &lt;optioninput options="A,B,C" correct="B"/&gt;
+  &lt;/optionresponse&gt;
+<span class="highlight-tag">&lt;/problem&gt;</span></pre></details></div>
+<div class="links"><p class="link">✅ <a href="../edx-to-moodle/index.html">GIFT EDX → GIFT Moodle</a></p><p class="link">✅ <a href="../index.html">XML → GIFT</a></p><p class="link">✅ <a href="../xml-merger/index.html">Объединить XML</a></p></div>
+<div class="container"><div class="textareaWrapper"><textarea id="xmlInput" aria-label="Исходный XML" placeholder="Вставьте XML здесь...&#10;&lt;problem&gt;&#10;  &lt;p&gt;1. Вопрос?&lt;/p&gt;&#10;  &lt;multiplechoiceresponse&gt;...&lt;/multiplechoiceresponse&gt;&#10;&lt;/problem&gt;"></textarea></div><div class="textareaWrapper"><textarea id="giftOutput" aria-label="Результат GIFT" placeholder="Результат GIFT будет здесь..."></textarea></div></div>
+<div class="buttons"><button id="convertBtn">Конвертировать</button><button id="downloadBtn">Скачать GIFT</button></div>
+<div id="customAlertOverlay" style="display:none" role="alertdialog" aria-modal="true" aria-label="Предупреждение Cloze"><div id="customAlert"><p class="blue"><strong>Внимание!</strong></p><p>Обнаружены вопросы Cloze (выпадающий список). Их нельзя смешивать с обычными GIFT-вопросами при импорте в Moodle.</p><p class="red">Сохраняйте каждый Cloze-вопрос в отдельный файл и выбирайте формат «Вложенные ответы (Cloze)».</p><button id="closeAlertBtn">Закрыть</button></div></div>
+<div id="status" role="status" aria-live="polite"></div>
+</body></html>
