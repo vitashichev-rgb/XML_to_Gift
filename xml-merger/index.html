@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Объединение и преобразование XML-файлов</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <h1>Объединение и преобразование XML-файлов</h1>
+  <p class="link"><a target="_blank" rel="noopener noreferrer" href="https://disk.yandex.ru/i/8f_GjrlA54BLdw">КАК ПОЛЬЗОВАТЬСЯ (ВИДЕОИНСТРУКЦИЯ)</a></p>
+  <p class="link">После объединения конвертировать <a href="../index.html">в XML → GIFT</a></p>
+  <div class="buttons">
+    <label for="fileInput" class="custom-file-upload">1. Выберите файлы</label>
+    <input type="file" id="fileInput" multiple accept=".xml,text/xml,application/xml">
+    <button type="button" id="mergeButton">2. Объединить</button>
+    <button type="button" id="formatButton" class="formatButton" title="Удаляет атрибуты markdown, max_attempts, showanswer и display_name">3. Форматировать<span class="tooltiptext">Удаляет markdown, max_attempts, showanswer и display_name</span></button>
+    <button type="button" id="downloadButton">4. Скачать</button>
+  </div>
+  <p id="status" role="status" aria-live="polite"></p>
+  <div class="textareaWrapper">
+    <textarea id="mergedOutput" spellcheck="false" aria-label="Объединённый XML" placeholder="Здесь появится объединённый XML..."></textarea>
+  </div>
+</body>
+</html>
