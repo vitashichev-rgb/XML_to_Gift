@@ -171,3 +171,54 @@ if(typeof document!=="undefined"){
   $("textInput").addEventListener("input",()=>{clozeFiles=[];render();});
 }
 if(typeof module!=="undefined")module.exports={convertTextToGift,splitQuestions,parseOne,validateGift,validateCloze};
+// v5.5 — conservative multiline short-answer continuation fix.
+// This patch wraps only parseOne; it does not modify splitQuestions,
+// parseMatching, parseMultiBlank, validation, or UI.
+const parseOneBeforeMultilineFix = parseOne;
+parseOne = function parseOneWithMultilineShortAnswers(block, index) {
+  const normalized = block.replace(/\r\n?/g, "\n");
+  const lines = normalized.split("\n");
+  const firstAnswer = lines.findIndex(line => /^\s*(?:=|or=)/i.test(line));
+  if (firstAnswer < 0) return parseOneBeforeMultilineFix(block, index);
+
+  // Never touch matching, multiple-choice, numerical or multi-blank Cloze.
+  if (lines.some(line => /\[\[[^\]\n]+\]\]/.test(line) ||
+    /^\s*[([]\s*[xхXХ]?\s*[)\]]/.test(line) ||
+    /^\s*#\s*[+-]?(?:\d|\.)/.test(line))) {
+    return parseOneBeforeMultilineFix(block, index);
+  }
+  const answerArea = lines.slice(firstAnswer);
+  if (answerArea.some((line, i) =>
+    /^\s*[a-zа-я](?:[.)])?\s*$/i.test(line) &&
+    /^\s*(?:=|or=)/i.test(answerArea[i + 1] || ""))) {
+    return parseOneBeforeMultilineFix(block, index);
+  }
+
+  let activeAnswer = false;
+  let changed = false;
+  const output = [];
+  for (const line of lines) {
+    const value = line.trim();
+    if (/^(?:=|or=)/i.test(value)) {
+      output.push(line);
+      activeAnswer = true;
+      continue;
+    }
+    // An unmarked lowercase word fragment, immediately after an answer,
+    // is a likely wrap. Do not join headings, numbering, full sentences,
+    // blank lines, or structural tags.
+    const isSafeContinuation = activeAnswer &&
+      /^[а-яёa-z][а-яёa-z-]{0,59}$/i.test(value) &&
+      !/^(?:or|а|б|в|г|a|b|c|d)[.)]?$/i.test(value) &&
+      !/^\s*(?:<|\[|\(|\{|#|\d+[.)])/.test(value) &&
+      output.length && /^\s*(?:=|or=)/i.test(output[output.length - 1]);
+    if (isSafeContinuation) {
+      output[output.length - 1] = output[output.length - 1].trimEnd() + " " + value;
+      changed = true;
+      continue;
+    }
+    activeAnswer = false;
+    output.push(line);
+  }
+  return parseOneBeforeMultilineFix(changed ? output.join("\n") : block, index);
+};
