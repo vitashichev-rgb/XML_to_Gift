@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'">
+  <title>XML → GIFT Конвертер</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <div class="errorLog hidden" id="errorLog" role="status" aria-live="polite">
+    <div id="errorOutput" class="errorLogWrapper"></div>
+  </div>
+  <h1>XML → GIFT Конвертер для итогового тестирования</h1>
+  <p class="link"><a target="_blank" rel="noopener noreferrer" href="https://disk.yandex.ru/i/8f_GjrlA54BLdw">КАК ПОЛЬЗОВАТЬСЯ (ВИДЕОИНСТРУКЦИЯ)</a></p>
+  <p>✅ Обновление: добавлена поддержка вопросов с коротким ответом, числовым ответом, вопросы с ответом в формате (да, нет). В общей сложности доступны четыре типа вопросов: одиночный выбор, множественный выбор, короткий ответ и числовой.</p>
+  <details>
+    <summary>Пример корректной разметки:</summary>
+    <pre><code>&lt;problems&gt;
+  &lt;problem&gt;
+    ...
+  &lt;/problem&gt;
+  &lt;problem&gt;
+    ...
+  &lt;/problem&gt;
+&lt;/problems&gt;</code><span class="copyButtons"><button id="copyButton" type="button" title="Копировать problems">&lt;problems&gt; ⧉</button><button id="copyButtonTwo" type="button" title="Копировать problem">&lt;problem&gt; ⧉</button></span></pre>
+  </details>
+  <div id="converterWrapper">
+    <div class="textareaWrapper"><textarea id="xmlInput" placeholder="Введите XML с несколькими вопросами..." aria-label="Исходный XML"></textarea></div>
+    <div class="textareaWrapper"><textarea id="giftOutput" placeholder="Здесь будет результат в GIFT..." aria-label="Результат GIFT"></textarea></div>
+  </div>
+  <div class="buttons">
+    <button id="uploadButton" type="button">Загрузить из файла</button>
+    <button id="previewButton" type="button">Конвертировать</button>
+    <button id="downloadButton" type="button">Скачать GIFT-файл</button>
+    <input type="file" id="fileInput" accept=".xml,text/xml,application/xml" hidden>
+    <button id="clearButton" type="button">Очистить</button>
+  </div>
+</body>
+</html>

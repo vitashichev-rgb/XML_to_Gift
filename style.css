@@ -1,0 +1,23 @@
+html,body {height:100%;}
+* {margin:0;padding:0;box-sizing:border-box;}
+h1 {font-size:28px;font-weight:700;}
+.pink {color:blue;}
+body {display:flex;flex-direction:column;gap:20px;font-family:monospace;padding:20px;background-color:#f4f4f4;font-size:18px;}
+#converterWrapper {flex:1;display:flex;flex-direction:row;gap:20px;min-height:0;}
+.textareaWrapper {flex:1;display:flex;flex-direction:column;padding:10px 5px;background-color:white;box-shadow:0 0 10px rgba(0,0,0,.05);overflow:hidden;border-radius:1rem;border:1px solid rgba(0,0,0,.1);min-width:0;}
+.textareaWrapper textarea {flex:1;}
+textarea {min-height:0;font-size:18px;width:100%;resize:none;border:none;padding:10px 15px;scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.1) transparent;overflow:auto;}
+textarea:focus {outline:none;}
+.buttons {width:100%;display:flex;gap:20px;flex-wrap:wrap;align-items:center;}
+button {font-size:1rem;padding-inline:20px;cursor:pointer;border:none;border-radius:1rem;background-color:#007bff;color:white;box-shadow:0 0 10px rgba(0,0,0,.05);height:60px;transition:.1s ease-in-out all;flex:1;display:flex;justify-content:center;align-items:center;}
+button:hover {background-color:#0658b0;}
+pre {display:flex;align-items:center;background:#fff;padding:20px;overflow-x:auto;font-size:18px;border-radius:1rem;box-shadow:0 0 10px rgba(0,0,0,.05);position:relative;height:max-content;margin-top:20px;}
+code {font-weight:500;color:blue;font-size:1rem;white-space:pre;}
+.copyButtons {width:max-content;gap:10px;position:sticky;right:0;top:0;display:flex;flex-direction:column;justify-content:flex-end;margin-left:auto;padding:10px;background:#fff;}
+#copyButton,#copyButtonTwo {width:max-content;padding:10px;height:auto;background-color:#f4f4f4;box-shadow:none;font-weight:500;color:blue;gap:5px;margin:0;white-space:nowrap;}
+#copyButton:hover,#copyButtonTwo:hover {background-color:#eee;}
+.errorLog {position:fixed;top:30px;right:20px;padding:10px;background-color:#f5dbdb;border-radius:1rem;margin-left:20px;z-index:100;max-width:75%;}
+#errorOutput {color:red;font-size:16px;max-height:200px;overflow-y:auto;scrollbar-width:thin;}
+@media (max-width:989px), (max-height:699px) {body{height:max-content;}h1{font-size:20px;}#converterWrapper{flex-direction:column;flex:1;} .textareaWrapper{min-height:500px;}}
+.green {color:green;}
+.hidden {display:none!important;}
