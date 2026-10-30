@@ -55,11 +55,49 @@ function parseMatching(lines, title) {
   if (pairs.length < 2) throw new Error(`${title}: для соответствия необходимо минимум две пары.`);
   return {type:"matching",gift:`::${title}::${giftEscape(header)} {\n${pairs.join("\n")}\n}\n\n`};
 }
+function labelKey(value) {
+  return value.toLowerCase().replace(/а/g, "a").replace(/в/g, "b").replace(/с/g, "c");
+}
+// Each labelled answer is a distinct blank, not an alternative answer.
+function parseMultiBlank(lines, title) {
+  const tail = [];
+  let pos = lines.length;
+  while (pos >= 2) {
+    const answer = lines[pos - 1].match(/^=\s*(.+)$/);
+    const marker = lines[pos - 2].match(/^([a-zа-я])\)\s*$/i);
+    if (!answer || !marker) break;
+    tail.unshift({ label: labelKey(marker[1]), answer: answer[1].trim() });
+    pos -= 2;
+  }
+  if (tail.length < 2) return null;
+  if (new Set(tail.map(x => x.label)).size !== tail.length) throw new Error(`${title}: повторяются метки пропусков.`);
+  const stem = lines.slice(0, pos).join("\n");
+  if (!stem.trim()) throw new Error(`${title}: отсутствует текст вопроса с пропусками.`);
+  let updated = stem;
+  for (const item of tail) {
+    if (!item.answer) throw new Error(`${title}: пустой ответ к пункту ${item.label}.`);
+    // Only replace labels followed by an underline blank, not arbitrary mentions of letters.
+    const marker = item.label === "a" ? "[aа]" : item.label === "b" ? "[bв]" : item.label === "c" ? "[cс]" : item.label;
+    const re = new RegExp(`(${marker}\\)\\s*)(_{2,})`, "i");
+    if (!re.test(updated)) throw new Error(`${title}: не найден пропуск «${item.label}) ____» в тексте.`);
+    const placeholder = `CLOZEFIELD${item.label.toUpperCase()}TOKEN`;
+    updated = updated.replace(re, (_, prefix) => prefix + placeholder);
+  }
+  if (/(?:^|\n)\s*[a-zа-я]\)\s*$/im.test(updated)) throw new Error(`${title}: осталась метка ответа без значения.`);
+  if (/_{2,}/.test(updated)) throw new Error(`${title}: найдены пропуски без ответов.`);
+  let safeText = giftEscape(updated);
+  for (const item of tail) {
+    safeText = safeText.replace(`CLOZEFIELD${item.label.toUpperCase()}TOKEN`, `{1:SHORTANSWER:=${giftEscape(item.answer)}}`);
+  }
+  return { type: "cloze", title, gift: `::${title}::${safeText}\n`, fields: tail.length };
+}
 function parseOne(block, idx) {
   const raw = block.split("\n").map(s=>s.trim()).filter(Boolean);
   if (!raw.length) return null;
   const title = `Вопрос ${idx+1}`;
   const lines = [raw[0].replace(/^\d+[.)]\s*/, ""), ...raw.slice(1)];
+  const multiBlank = parseMultiBlank(lines,title);
+  if (multiBlank) return multiBlank;
   if (lines.some(s=>matchingOption.test(s))) return parseMatching(lines,title);
   const first = lines.findIndex((s,i)=>i>0 && isAnswerLine(s));
   if (first<0) throw new Error(`${title}: ответы не обнаружены.`);
@@ -101,7 +139,7 @@ function convertTextToGift(text) {
   const blocks=splitQuestions(text);
   if (!blocks.length) throw new Error("Вставьте исходные вопросы.");
   const result=blocks.map((block,i)=>parseOne(block,i));
-  return {gift:result.map(v=>v.gift).join("").trim(), counts:result.reduce((acc,v)=>(acc[v.type]=(acc[v.type]||0)+1,acc),{})};
+  return {gift:result.filter(v=>v.type!=="cloze").map(v=>v.gift).join("").trim(), clozeFiles:result.filter(v=>v.type==="cloze").map(v=>({name:v.title,gift:v.gift,fields:v.fields})), counts:result.reduce((acc,v)=>(acc[v.type]=(acc[v.type]||0)+1,acc),{})};
 }
 
 // Static pre-download validator. Does not replace Moodle's import validation.
@@ -173,6 +211,30 @@ function validateGift(gift, sourceText = "") {
 }
 if (typeof document!=="undefined") {
   const $=id=>document.getElementById(id);
+  let clozeFiles = [];
+  const clozeSection = document.createElement("section");
+  clozeSection.id="clozeDownloads";
+  clozeSection.style.cssText="margin:0 20px 20px;padding:16px;background:white;border:1px solid #dce2ea;border-radius:14px;display:none";
+  function saveGift(text,name) {
+    const url=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"}));
+    const a=document.createElement("a");a.href=url;a.download=name+".gift";document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  function renderClozeDownloads() {
+    clozeSection.replaceChildren();
+    clozeSection.style.display=clozeFiles.length?"block":"none";
+    if(!clozeFiles.length)return;
+    const heading=document.createElement("p");
+    heading.textContent=`Cloze-вопросов: ${clozeFiles.length}. Каждый вопрос скачивается отдельно. При импорте в Moodle выберите формат «Вложенные ответы (Cloze)».`;
+    clozeSection.appendChild(heading);
+    clozeFiles.forEach((file,i)=>{
+      const btn=document.createElement("button");btn.type="button";
+      btn.style.cssText="width:auto;display:inline-block;margin:8px 8px 0 0;padding:12px";
+      btn.textContent=`Скачать Cloze — ${file.name} (${file.fields} поля)`;
+      btn.addEventListener("click",()=>saveGift(file.gift,`cloze_question_${i+1}`));
+      clozeSection.appendChild(btn);
+    });
+  }
   const bar=document.querySelector(".buttons");
   const checkBtn=document.createElement("button");
   checkBtn.id="validateBtn"; checkBtn.type="button"; checkBtn.textContent="Проверить GIFT";
@@ -181,6 +243,7 @@ if (typeof document!=="undefined") {
   status.id="validationReport";status.setAttribute("role","status");status.setAttribute("aria-live","polite");
   status.style.cssText="margin:0 20px 20px;padding:16px;background:#fff;border:1px solid #dce2ea;border-radius:14px;display:none;white-space:pre-wrap;line-height:1.5";
   bar.insertAdjacentElement("afterend",status);
+  status.insertAdjacentElement("afterend",clozeSection);
   function check(show=true) {
     const report=validateGift($("giftOutput").value,$("textInput").value);
     if (show) {
@@ -193,8 +256,16 @@ if (typeof document!=="undefined") {
     return report;
   }
   $("convertBtn").addEventListener("click",()=>{
-    try {$("giftOutput").value=convertTextToGift($("textInput").value).gift;$("customAlertOverlay").style.display="none";check(true);}
-    catch(e){$("giftOutput").value="";status.style.display="none";alert("Ошибка конвертации: "+e.message);}
+    try {
+      const converted=convertTextToGift($("textInput").value);
+      clozeFiles=converted.clozeFiles;
+      $("giftOutput").value=converted.gift;
+      renderClozeDownloads();
+      $("customAlertOverlay").style.display=clozeFiles.length?"flex":"none";
+      if(converted.gift)check(true);
+      else {status.style.display="block";status.textContent=`Обычных GIFT-вопросов нет. Подготовлено Cloze-файлов: ${clozeFiles.length}. Скачайте их отдельно ниже.`;}
+    }
+    catch(e){clozeFiles=[];renderClozeDownloads();$("giftOutput").value="";status.style.display="none";alert("Ошибка конвертации: "+e.message);}
   });
   checkBtn.addEventListener("click",()=>check(true));
   $("closeAlertBtn").addEventListener("click",()=>$("customAlertOverlay").style.display="none");
@@ -209,6 +280,7 @@ if (typeof document!=="undefined") {
     const a=document.createElement("a");a.href=url;a.download=name+".gift";document.body.appendChild(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
-  $("clearAll").addEventListener("click",()=>{$("textInput").value="";$("giftOutput").value="";status.style.display="none";$("customAlertOverlay").style.display="none";window.scrollTo(0,0);});
+  $("textInput").addEventListener("input",()=>{clozeFiles=[];renderClozeDownloads();});
+  $("clearAll").addEventListener("click",()=>{clozeFiles=[];renderClozeDownloads();$("textInput").value="";$("giftOutput").value="";status.style.display="none";$("customAlertOverlay").style.display="none";window.scrollTo(0,0);});
 }
 if (typeof module!=="undefined")module.exports={convertTextToGift,splitQuestions,parseOne,validateGift};
